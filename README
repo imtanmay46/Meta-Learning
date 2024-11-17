@@ -1,0 +1,18 @@
+META-LEARNING 
+
+ASSIGNMENT-2: ARC
+
+TANMAY SINGH
+2021569
+CSAI
+CLASS OF '25
+
+
+INSTRUCTIONS TO RUN & DESCRIPTION OF FILE CONTENTS:
+
+1. Run the pre-installs.py file to download/resolve all the dependency issues. This will also create two directories, 'data' (used to download & store the data using wget (github))
+   & the 'saved_models' directory that will download the pickle files of the trained models from the publicly accessible google drive link using gdown & store them (to be used in validation & prediction files).
+2. Run the models.py present inside the Models directory to initialize the model to be used in the training files.
+3. Run the train.ipynb or train.py to train the models & overwrite the downloaded pickles. If google drive pickle files are to be used after this, re-run pre-installs.
+4. Run the validation.ipynb or validation.py to evaluate the trained/saved models on the meta-testing set.
+5. Run the predict.ipynb or predict.py for evaluation on the entire evaluation set publicly available!

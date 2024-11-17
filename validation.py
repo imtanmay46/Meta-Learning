@@ -3,526 +3,427 @@
 
 # Meta Learning
 # 
-# NumerAi
+# ARC
 # 
 # Tanmay Singh
 # 2021569
 # CSAI
 # Class of '25
 
-# In[1]:
+# In[ ]:
 
 
 import os
-import gc
-import time
 import json
-import pickle
-import numpy as np
-import pandas as pd
-import seaborn as sb
-import xgboost as xgb
-import lightgbm as lgb
-import cloudpickle as cp
-import matplotlib.pyplot as plt
-
-
-# In[2]:
-
-
-import warnings
-warnings.filterwarnings('ignore')
-
-
-# In[3]:
-
-
+import random
 import torch
+import numpy as np
 import torch.nn as nn
-import torch.optim as optim
-import torch.nn.functional as F
-
-
-# In[4]:
-
-
-from torchsummary import summary
-from torch.utils.data import DataLoader, Dataset
-
-
-# In[5]:
-
-
+import mplcyberpunk as mcy
 from tqdm.auto import tqdm
-from scipy import stats
-from numerapi import NumerAPI
-from scipy.stats import pearsonr
-from xgboost import XGBClassifier
-from catboost import CatBoostClassifier
+import torch.optim as optim
+import matplotlib.pyplot as plt
+from torch.utils.data import Dataset, DataLoader
+from sklearn.model_selection import train_test_split
+from matplotlib.colors import ListedColormap, Normalize
 
 
-# In[6]:
+# In[ ]:
 
 
-from sklearn.tree import *
-from sklearn.metrics import *
-from sklearn.ensemble import *
-from sklearn.linear_model import *
-from sklearn.decomposition import *
-from sklearn.preprocessing import *
-from sklearn.neural_network import *
-from sklearn.model_selection import *
-from sklearn.cluster._kmeans import KMeans
-from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import LocalOutlierFactor
-from sklearn.neighbors import KNeighborsClassifier
-from imblearn.under_sampling import RandomUnderSampler
-from sklearn.utils.class_weight import compute_class_weight
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+def load_task(task_path):
+    with open(task_path, 'r') as f:
+        task = json.load(f)
+    return task
+
+def visualize_task(task, title_prefix="Original", num_samples=None):
+    if num_samples is not None:
+        task = task[:num_samples]
+    
+    for idx, pair in enumerate(task):
+        input_grid = np.array(pair["input"])
+        output_grid = np.array(pair["output"])
+        
+        fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+        cmap = ListedColormap([
+            '#000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
+            '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'
+        ])
+        norm = Normalize(vmin=0, vmax=9)
+
+        axes[0].imshow(input_grid, cmap=cmap, norm=norm)
+        axes[0].set_title(f"{title_prefix} Input {idx+1}")
+        axes[1].imshow(output_grid, cmap=cmap, norm=norm)
+        axes[1].set_title(f"{title_prefix} Output {idx+1}")
+
+        for ax in axes:
+            ax.axis('off')
+        plt.tight_layout()
+        plt.show()
+
+def plot_task(task):
+    examples = task['train']
+    n_examples = len(examples)
+    cmap = ListedColormap([
+        '#000', '#0074D9', '#FF4136', '#2ECC40', '#FFDC00',
+        '#AAAAAA', '#F012BE', '#FF851B', '#7FDBFF', '#870C25'
+    ])
+    norm = Normalize(vmin=0, vmax=9)
+    fig, axes = plt.subplots(2, n_examples, figsize=(n_examples * 4, 8))
+    for i, example in enumerate(examples):
+        axes[0, i].imshow(example['input'], cmap=cmap, norm=norm)
+        axes[1, i].imshow(example['output'], cmap=cmap, norm=norm)
+        axes[0, i].axis('off')
+        axes[1, i].axis('off')
+    plt.show()
 
 
-# Creating a Feature Set
-
-# In[10]:
+# In[ ]:
 
 
-feature_metadata = json.load(open(f"./data/v5.0/features.json"))
+data_dir = './data/arc_data/ARC-AGI-master/data/'
+training_dir = os.path.join(data_dir, 'training')
+evaluation_dir = os.path.join(data_dir, 'evaluation')
 
-for metadata in feature_metadata:
-  print(metadata, len(feature_metadata[metadata]))
+val_split = 0.2
+random_seed = 42
+random.seed(random_seed)
 
+def load_json(file_path):
+    with open(file_path, 'r') as f:
+        return json.load(f)
 
-# In[11]:
+train_files = [os.path.join(training_dir, f) for f in os.listdir(training_dir) if f.endswith('.json')]
+evaluation_files = [os.path.join(evaluation_dir, f) for f in os.listdir(evaluation_dir) if f.endswith('.json')]
 
+random.shuffle(train_files)
+train_files, val_files = train_test_split(train_files, test_size=val_split, random_state=random_seed)
 
-feature_sets = feature_metadata["feature_sets"]
-for feature_set in ["small", "medium", "all"]:
-  print(feature_set, len(feature_sets[feature_set]))
+def process_files(file_list, key='train'):
+    dataset = []
+    for file_path in file_list:
+        data = load_json(file_path)
+        for item in data[key]:
+            dataset.append({
+                'input': item['input'],
+                'output': item['output']
+            })
+    return dataset
 
+train_dataset = process_files(train_files, key='train')
+val_dataset = process_files(val_files, key='train')
+eval_dataset = process_files(evaluation_files, key='test')
 
-# In[12]:
+output_dir = './data/arc_data/processed_data'
+os.makedirs(output_dir, exist_ok=True)
 
+with open(os.path.join(output_dir, 'train_dataset.json'), 'w') as f:
+    json.dump(train_dataset, f, indent=4)
 
-feature_sets = feature_metadata["feature_sets"]
-feature_sets.keys()
+with open(os.path.join(output_dir, 'val_dataset.json'), 'w') as f:
+    json.dump(val_dataset, f, indent=4)
 
+with open(os.path.join(output_dir, 'eval_dataset.json'), 'w') as f:
+    json.dump(eval_dataset, f, indent=4)
 
-# In[13]:
-
-
-for feature_set in feature_sets:
-  print(f'Feature Set: {feature_set:<25}', f'Size: {len(feature_sets[feature_set])}')
-
-
-# Loading the Saved Experts & the Meta-Model
-
-# In[14]:
-
-
-with open('./saved_models/numerai_expert1.pkl', 'rb') as f:
-    expert1 = pickle.load(f)
-print("Model loaded successfully!")
-
-
-# In[15]:
-
-
-with open('./saved_models/numerai_expert2.pkl', 'rb') as f:
-    expert2 = pickle.load(f)
-print("Model loaded successfully!")
-
-
-# In[16]:
-
-
-with open('./saved_models/numerai_expert3.pkl', 'rb') as f:
-    expert3 = pickle.load(f)
-print("Model loaded successfully!")
+print(f"Training samples: {len(train_dataset)}")
+print(f"Validation samples: {len(val_dataset)}")
+print(f"Evaluation samples: {len(eval_dataset)}")
 
 
-# In[17]:
+# In[ ]:
 
 
-with open('./saved_models/numerai_expert4.pkl', 'rb') as f:
-    expert4 = pickle.load(f)
-print("Model loaded successfully!")
+def pad_grid_uniform(grid, target_size=30, pad_value=10):
+    rows, cols = len(grid), len(grid[0]) if grid else 0
+
+    row_padding = (target_size - rows) // 2
+    col_padding = (target_size - cols) // 2
+
+    row_padding_extra = (target_size - rows) % 2
+    col_padding_extra = (target_size - cols) % 2
+
+    padded_grid = np.full((target_size, target_size), pad_value, dtype=int)
+
+    padded_grid[
+        row_padding : row_padding + rows, 
+        col_padding : col_padding + cols
+    ] = grid
+
+    return padded_grid.tolist()
+
+def pad_dataset_uniform(dataset, target_size=30, pad_value=10):
+    padded_dataset = []
+    for task in dataset:
+        padded_task = {
+            "input": pad_grid_uniform(task["input"], target_size, pad_value),
+            "output": pad_grid_uniform(task["output"], target_size, pad_value)
+        }
+        padded_dataset.append(padded_task)
+    return padded_dataset
+
+output_dir = './data/arc_data/processed_data'
+
+with open(os.path.join(output_dir, 'train_dataset.json'), 'r') as f:
+    train_dataset = json.load(f)
+
+with open(os.path.join(output_dir, 'val_dataset.json'), 'r') as f:
+    val_dataset = json.load(f)
+
+with open(os.path.join(output_dir, 'eval_dataset.json'), 'r') as f:
+    eval_dataset = json.load(f)
+
+padded_train_dataset = pad_dataset_uniform(train_dataset, target_size=30, pad_value=10)
+padded_val_dataset = pad_dataset_uniform(val_dataset, target_size=30, pad_value=10)
+padded_eval_dataset = pad_dataset_uniform(eval_dataset, target_size=30, pad_value=10)
+
+with open(os.path.join(output_dir, 'padded_train_dataset.json'), 'w') as f:
+    json.dump(padded_train_dataset, f, indent=4)
+
+with open(os.path.join(output_dir, 'padded_val_dataset.json'), 'w') as f:
+    json.dump(padded_val_dataset, f, indent=4)
+
+with open(os.path.join(output_dir, 'padded_eval_dataset.json'), 'w') as f:
+    json.dump(padded_eval_dataset, f, indent=4)
+
+print("Padding complete!")
+print(f"Padded Training samples: {len(padded_train_dataset)}")
+print(f"Padded Validation samples: {len(padded_val_dataset)}")
+print(f"Padded Evaluation samples: {len(padded_eval_dataset)}")
 
 
-# In[18]:
+# In[ ]:
 
 
-with open('./saved_models/numerai_expert5.pkl', 'rb') as f:
-    expert5 = pickle.load(f)
-print("Model loaded successfully!")
+task_path = './data/arc_data/processed_data/train_dataset.json'
+task = load_task(task_path)
+
+visualize_task(task, title_prefix="Original", num_samples = 10)
 
 
-# In[19]:
+# In[ ]:
 
 
-with open('./saved_models/numerai_expert6.pkl', 'rb') as f:
-    expert6 = pickle.load(f)
-print("Model loaded successfully!")
+padded_task_path = './data/arc_data/processed_data/padded_train_dataset.json'
+padded_task = load_task(padded_task_path)
+
+visualize_task(padded_task, title_prefix="Padded", num_samples = 10)
 
 
-# In[20]:
+# In[ ]:
 
 
-with open('./saved_models/numerai_meta_model.pkl', 'rb') as f:
-    meta_model = pickle.load(f)
-print("Meta Model loaded successfully!")
+def flatten_grid(grid):
+    return [cell for row in grid for cell in row]
+
+def flatten_dataset(dataset):
+    flattened_dataset = []
+    for task in dataset:
+        flattened_task = {
+            "input": flatten_grid(task["input"]),
+            "output": flatten_grid(task["output"])
+        }
+        flattened_dataset.append(flattened_task)
+    return flattened_dataset
+
+flattened_train_dataset = flatten_dataset(padded_train_dataset)
+flattened_val_dataset = flatten_dataset(padded_val_dataset)
+flattened_eval_dataset = flatten_dataset(padded_eval_dataset)
+
+output_dir = './data/arc_data/processed_data'
+
+with open(os.path.join(output_dir, 'flattened_train_dataset.json'), 'w') as f:
+    json.dump(flattened_train_dataset, f, indent=4)
+
+with open(os.path.join(output_dir, 'flattened_val_dataset.json'), 'w') as f:
+    json.dump(flattened_val_dataset, f, indent=4)
+
+with open(os.path.join(output_dir, 'flattened_eval_dataset.json'), 'w') as f:
+    json.dump(flattened_eval_dataset, f, indent=4)
+
+print("Flattened datasets saved!")
+print(f"Flattened Training samples: {len(flattened_train_dataset)}")
+print(f"Flattened Validation samples: {len(flattened_val_dataset)}")
+print(f"Flattened Evaluation samples: {len(flattened_eval_dataset)}")
 
 
-# Loading the Validation Set, with a 'medium' feature set
-
-# In[22]:
+# In[ ]:
 
 
-feature_set = feature_sets["medium"]
+BATCH_SIZE = 4
+NUM_EPOCHS = 100
+INNER_LR = 1e-4
+OUTER_LR = 1e-3
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-val = pd.read_parquet(
-    f"./data/v5.0/validation.parquet",
-    columns=["era", "target"] + feature_set
+
+# In[ ]:
+
+
+class FlattenedARCDataset(Dataset):
+    def __init__(self, data, is_input=True):
+        self.data = data
+        self.is_input = is_input
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        if self.is_input:
+            grid = self.data[idx]["input"]
+        else:
+            grid = self.data[idx]["output"]
+        return torch.tensor(grid, dtype=torch.float32)
+
+train_inputs = FlattenedARCDataset(flattened_train_dataset, is_input=True)
+train_outputs = FlattenedARCDataset(flattened_train_dataset, is_input=False)
+
+val_inputs = FlattenedARCDataset(flattened_val_dataset, is_input=True)
+val_outputs = FlattenedARCDataset(flattened_val_dataset, is_input=False)
+
+eval_inputs = FlattenedARCDataset(flattened_eval_dataset, is_input=True)
+eval_outputs = FlattenedARCDataset(flattened_eval_dataset, is_input=False)
+
+train_input_loader = DataLoader(train_inputs, batch_size=BATCH_SIZE, shuffle=True)
+train_output_loader = DataLoader(train_outputs, batch_size=BATCH_SIZE, shuffle=True)
+
+val_input_loader = DataLoader(val_inputs, batch_size=BATCH_SIZE, shuffle=False)
+val_output_loader = DataLoader(val_outputs, batch_size=BATCH_SIZE, shuffle=False)
+
+eval_input_loader = DataLoader(eval_inputs, batch_size=BATCH_SIZE, shuffle=False)
+eval_output_loader = DataLoader(eval_outputs, batch_size=BATCH_SIZE, shuffle=False)
+
+
+# In[ ]:
+
+
+class MAMLTrainingPipeline:
+    def __init__(self, model, train_input_loader, train_output_loader, val_input_loader, val_output_loader, outer_optimizer, device, inner_lr=INNER_LR):
+        self.model = model
+        self.train_input_loader = train_input_loader
+        self.train_output_loader = train_output_loader
+        self.val_input_loader = val_input_loader
+        self.val_output_loader = val_output_loader
+        self.outer_optimizer = outer_optimizer
+        self.device = device
+        self.inner_lr = inner_lr
+
+    def compute_elementwise_loss(self, predicted, actual):
+        differences = torch.abs(predicted - actual)
+        total_loss = differences.sum()
+        avg_loss = total_loss / predicted.numel()
+        return avg_loss
+
+    def inner_loop(self, inputs, targets):
+        task_model = EncoderDecoderModel().to(self.device)
+        task_model.load_state_dict(self.model.state_dict())
+        inner_optimizer = optim.Adam(task_model.parameters(), lr=self.inner_lr)
+
+        task_model.train()
+        for _ in range(5):
+            inner_optimizer.zero_grad()
+            outputs = task_model(inputs)
+            loss = self.compute_elementwise_loss(outputs, targets)
+            loss.backward()
+            inner_optimizer.step()
+
+        return task_model
+
+    def outer_loop(self, num_epochs):
+        train_losses = []
+
+        for epoch in tqdm(range(1, num_epochs + 1), desc="Meta-Training"):
+            self.model.train()
+            total_meta_loss = 0.0
+
+            for inputs, targets in tqdm(zip(self.train_input_loader, self.train_output_loader), desc=f"Epoch {epoch} - Inner Loop", leave=False):
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                adapted_model = self.inner_loop(inputs, targets)
+
+                adapted_model.eval()
+                meta_outputs = adapted_model(inputs)
+                meta_loss = self.compute_elementwise_loss(meta_outputs, targets)
+
+                meta_loss.backward()
+                total_meta_loss += meta_loss.item()
+
+            torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=5.0)
+            self.outer_optimizer.step()
+            self.outer_optimizer.zero_grad()
+
+            train_losses.append(total_meta_loss / len(self.train_input_loader))
+            print(f"Epoch {epoch}: Train Loss = {train_losses[-1]:.4f}")
+
+            epoch_model_path = os.path.join("./saved_models", f"meta_model_epoch_{epoch}.pth")
+            torch.save(self.model.state_dict(), epoch_model_path)
+            # torch.save(self.model.state_dict(), f"meta_model_epoch_{epoch}.pth")
+
+        print("Meta-Training completed. Computing final validation loss.")
+        val_losses = self.validate()
+        print(f"Final Validation Loss: {sum(val_losses) / len(val_losses):.4f}")
+
+        best_model_path = os.path.join("./saved_models", "best_meta_model.pth")
+        torch.save(self.model.state_dict(), best_model_path)
+        # torch.save(self.model.state_dict(), "best_meta_model.pth")
+        print("Model saved as 'best_meta_model.pth'.")
+
+        return train_losses, val_losses
+
+    def validate(self):
+        self.model.eval()
+        batch_losses = []
+        with torch.no_grad():
+            for batch_idx, (inputs, targets) in enumerate(zip(self.val_input_loader, self.val_output_loader), 1):
+                inputs, targets = inputs.to(self.device), targets.to(self.device)
+                outputs = self.model(inputs)
+                loss = self.compute_elementwise_loss(outputs, targets)
+                batch_losses.append(loss.item())
+                print(f"Validation Batch {batch_idx}: Loss = {loss.item():.4f}")
+
+        return batch_losses
+
+
+# In[ ]:
+
+
+model = EncoderDecoderModel().to(DEVICE)
+outer_optimizer = optim.AdamW(model.parameters(), lr=OUTER_LR, weight_decay=0.01)
+
+pipeline = MAMLTrainingPipeline(
+    model,
+    train_input_loader,
+    train_output_loader,
+    val_input_loader,
+    val_output_loader,
+    outer_optimizer,
+    DEVICE
 )
 
-
-# Preprocessing the Validation Set (in the same manner as the Training Set)
-
-# In[23]:
-
-
-val.rename(columns=lambda x: f'feature {feature_set.index(x)}' if x in feature_set else x, inplace=True)
-feature_set = val.columns.drop(["era", "target"])
-
-
-# In[24]:
-
-
-val['era'] = val['era'].astype('int32')
-
-
-# In[25]:
-
-
-val
-
-
-# In[26]:
-
-
-val.isna().any().any()
-
-
-# In[27]:
-
-
-val = val.dropna(subset=['target'])
-val
-
-
-# In[28]:
-
-
-unique_era = val['era'].unique()
+train_losses, val_losses = pipeline.outer_loop(num_epochs=NUM_EPOCHS)
 
 
 # In[ ]:
 
 
-val[val['era'] == unique_era[0]]
-
-
-# In[29]:
-
-
-test_set = val
-test_set
-
-
-# In[30]:
-
-
-test_set.isna().any().any()
-test_set['target'].value_counts()
-
-
-# Encoding the Numeric Values in the Target into corresponding labels (class 0 to class 4)
-
-# In[31]:
-
-
-label_encoder = LabelEncoder()
-label_encoder.fit(test_set['target'])
-test_set['target'] = label_encoder.transform(test_set['target'])
-
-
-# In[32]:
-
-
-test_df_x = test_set.drop(['target'], axis=1, inplace=False)
-test_df_y = test_set['target']
-
-
-# In[33]:
-
-
-test_df_x
-
-
-# In[34]:
-
-
-test_df_y
-
-
-# In[35]:
-
-
-test_df_x_resampled = test_df_x
-
-test_df_x_resampled
-
-
-# In[36]:
-
-
-test_df_y_resampled = test_df_y
-
-test_df_y_resampled
-
-
-# Function to compute Label Frequencies
-
-# In[37]:
-
-
-def label_frequency(predictions):
-    unique, counts = np.unique(predictions, return_counts=True)
-    label_frequencies = dict(zip(unique, counts))
-    print("Label frequencies:", label_frequencies)
-
-
-# Function to compute NumerAi Correlation
-
-# In[38]:
-
-
-def numerai_corr(preds, target):
-  ranked_preds = (preds.rank(method="average").values - 0.5) / preds.count()
-  gauss_ranked_preds = stats.norm.ppf(ranked_preds)
-
-  centered_target = target - target.mean()
-
-  preds_p15 = np.sign(gauss_ranked_preds) * np.abs(gauss_ranked_preds) ** 1.5
-  target_p15 = np.sign(centered_target) * np.abs(centered_target) ** 1.5
-
-  return np.corrcoef(preds_p15, target_p15)[0, 1]
-
-
-# Generating Predictions from Experts
-
-# EXPERT-1 (XGBOOST CLASSIFIER)
-
-# In[44]:
-
-
-expert1_test_pred = expert1.predict(test_df_x_resampled)
-
-
-# In[45]:
-
-
-expert1_test_pred
-
-
-# EXPERT-2 (RANDOM FOREST CLASSIFIER)
-
-# In[46]:
-
-
-expert2_test_pred = expert2.predict(test_df_x_resampled)
-
-
-# In[47]:
-
-
-expert2_test_pred
-
-
-# EXPERT-3 (ADABOOST CLASSIFIER with DECISION TREE CLASSIFIER as BASE ESTIMATOR)
-
-# In[48]:
-
-
-expert3_test_pred = expert3.predict(test_df_x_resampled)
-
-
-# In[49]:
-
-
-expert3_test_pred
-
-
-# EXPERT-4 (LOGISTIC REGRESSION)
-
-# In[50]:
-
-
-expert4_test_pred = expert4.predict(test_df_x_resampled)
-
-
-# In[51]:
-
-
-expert4_test_pred
-
-
-# EXPERT-5 (CATBOOST CLASSIFIER)
-
-# In[52]:
-
-
-expert5_test_pred = expert5.predict(test_df_x_resampled)
-
-
-# In[53]:
-
-
-if expert5_test_pred.ndim > 1:
-    expert5_test_pred = expert5_test_pred.ravel()
-
-
-# In[54]:
-
-
-expert5_test_pred
-
-
-# EXPERT-6 (HISTOGRAM-BASED GRADIENT BOOST CLASSIFIER)
-
-# In[55]:
-
-
-expert6_test_pred = expert6.predict(test_df_x_resampled)
-
-
-# In[56]:
-
-
-expert6_test_pred
-
-
-# Generating Predictions from the Meta-Model (LIGHTGBM)
-
-# In[57]:
-
-
-meta_test_x = np.column_stack((expert1_test_pred, expert2_test_pred, expert3_test_pred, expert4_test_pred, expert5_test_pred, expert6_test_pred))
-
-
-# In[58]:
-
-
-meta_test_x
-
-
-# In[59]:
-
-
-meta_test_y_pred = meta_model.predict(meta_test_x)
-
-
-# In[60]:
-
-
-meta_test_y_pred
-
-
-# In[61]:
-
-
-bins = [0.5, 1.5, 2.5, 3.5]
-
-rounded_predictions = np.digitize(meta_test_y_pred, bins)
-
-
-# In[62]:
-
-
-rounded_predictions
-
-
-# In[63]:
-
-
-label_frequency(rounded_predictions)
-
-
-# In[ ]:
-
-
-test_df_y_resampled
-
-
-# Computing Relevant Evaluation Metrics
-
-# In[64]:
-
-
-acc = accuracy_score(rounded_predictions, test_df_y_resampled)
-print("Accuracy on Validation Set: ", acc)
-
-
-# Pearson's Correlation
-
-# In[65]:
-
-
-pearson_corr, _ = stats.pearsonr(rounded_predictions, test_df_y_resampled)
-print("Pearson Correlation:", pearson_corr)
-
-
-# Reporting Class-wise Accuracies & F1 Scores
-
-# In[66]:
-
-
-class_accuracies = {}
-
-for class_label in np.unique(test_df_y_resampled):
-    class_mask = (test_df_y_resampled == class_label)
-    class_accuracy = accuracy_score(test_df_y_resampled[class_mask], rounded_predictions[class_mask])
-    class_accuracies[class_label] = class_accuracy
-    print(f"Accuracy for class {class_label}: {class_accuracy:.4f}")
-
-print("\n")
-
-f1_scores = f1_score(test_df_y_resampled, rounded_predictions, average=None)
-for class_label, f1 in zip(np.unique(test_df_y_resampled), f1_scores):
-    print(f"F1 Score for class {class_label}: {f1:.4f}")
-
-
-# Saving the Predictions in a Pickle File
-
-# In[ ]:
-
-
-# with open('numerai_fullprediction.pkl', 'wb') as f:
-#     pickle.dump(rounded_predictions, f)
-
-# print("Predictions saved successfully to numerai_fullprediction.pkl!")
-
-
-# Computing the NumerAi's Correlation Metric
-
-# In[67]:
-
-
-rounded_predictions = pd.Series(rounded_predictions)
-
-
-# In[68]:
-
-
-actual_corr = numerai_corr(rounded_predictions, test_df_y_resampled)
-actual_corr
+plt.style.use("cyberpunk")
+plt.figure(figsize=(10, 5))
+plt.plot(train_losses, label="Meta-Train Loss", color="gold")
+plt.xlabel("Epochs")
+plt.ylabel("Loss")
+plt.title("Meta-Training Loss")
+plt.legend()
+mcy.add_gradient_fill()
+plt.show()
+
+plt.style.use("cyberpunk")
+plt.figure(figsize=(10, 5))
+plt.plot(val_losses, label="Validation Loss (Per Batch)", color="coral")
+plt.xlabel("Batches")
+plt.ylabel("Loss")
+plt.title("Validation Loss Per Batch")
+plt.legend()
+mcy.add_gradient_fill()
+plt.show()
+
+print(f"Meta-Training completed. Final Validation Loss: {sum(val_losses) / len(val_losses):.4f}")
 
